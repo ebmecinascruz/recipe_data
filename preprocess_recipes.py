@@ -2,6 +2,7 @@ import pandas as pd
 import ast
 from typing import List, Dict, Any
 import json
+import re
 
 def parse_steps(steps_str: str) -> List[Dict[str, Any]]:
     """
@@ -46,6 +47,18 @@ def parse_steps(steps_str: str) -> List[Dict[str, Any]]:
         processed_steps.append(processed_step)
     
     return processed_steps
+
+def parse_ingredients(ingredients_json: str) -> List[Dict]:
+    """Parse ingredients from JSON string into list of dictionaries with name, unit, and amount."""
+    if not ingredients_json:
+        return []
+        
+    try:
+        ingredients = json.loads(ingredients_json)
+        # Return the ingredients as is, since they're already in the correct format
+        return ingredients
+    except json.JSONDecodeError:
+        return []
 
 def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -96,19 +109,52 @@ def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     
     return df
 
-def main():
-    # Load the data
-    print("Loading recipe data...")
+def preprocess_recipes():
+    # Load the dataframe with scraped data
     df = pd.read_csv('data/recipe_200_with_scraped_data.csv')
     
-    # Preprocess the data
-    print("Preprocessing recipe data...")
-    df = preprocess_dataframe(df)
+    # Create new dataframe with processed data
+    processed_df = pd.DataFrame()
     
-    # Save the preprocessed data
-    print("Saving preprocessed data...")
-    df.to_csv('data/recipe_200_preprocessed.csv', index=False)
-    print("Done!")
+    # Add recipe_id and creator_id
+    processed_df['recipe_id'] = df['id']
+    processed_df['creator_id'] = df['contributor_id']
+    
+    # Add both raw and scraped titles
+    processed_df['title_raw'] = df['name']
+    processed_df['title'] = df['title'].fillna(df['name'])
+    
+    # Handle description - convert NaN to empty string and ensure it's a string
+    processed_df['description'] = df['description'].fillna('').astype(str)
+    
+    # Parse ingredients from the scraped data
+    processed_df['ingredients'] = df['ingredients_parsed'].apply(parse_ingredients)
+    
+    # Parse instructions from the scraped data
+    def format_instructions(instructions_list):
+        if pd.isna(instructions_list):
+            return []
+        try:
+            instructions = json.loads(instructions_list)
+            return [{'step': idx + 1, 'description': step} for idx, step in enumerate(instructions)]
+        except (json.JSONDecodeError, TypeError):
+            return []
+    
+    processed_df['instructions'] = df['instructions'].apply(format_instructions)
+    
+    # Add additional columns
+    processed_df['cook_time'] = df['cook_time']
+    processed_df['servings'] = df['servings']
+    
+    # Add tags if they exist in the original dataframe
+    if 'tags' in df.columns:
+        processed_df['tags'] = df['tags']
+    else:
+        processed_df['tags'] = None
+    
+    # Save the processed dataframe
+    processed_df.to_csv('data/recipe_200_processed.csv', index=False)
+    print("Preprocessing completed and data saved!")
 
 if __name__ == "__main__":
-    main() 
+    preprocess_recipes() 
